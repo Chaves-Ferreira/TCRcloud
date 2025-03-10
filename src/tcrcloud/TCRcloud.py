@@ -292,6 +292,12 @@ def main():
         required=False,
     )
     parser_vgenes.add_argument(
+        "-s",
+        "--spectratyping",
+        action="store_true",
+        help="Generate spectratyping images (2D plots per chain)"
+        )
+    parser_vgenes.add_argument(
         "-yha",
         "--yhighalpha",
         type=int,

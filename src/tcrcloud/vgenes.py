@@ -24,21 +24,11 @@ IGLV = tcrcloud.colours.IGLV
 def get_table(keys, samples, args):
     if args.compare.lower() != "true":
         if args.compare.lower() != "false":
-            sys.stderr.write(
-                "TCRcloud error: please indicate \
-True or False\n"
-            )
+            sys.stderr.write("TCRcloud error: please indicate True or False\n")
             exit()
 
     datasets = []
-    for_comparison = {}
-    for_comparison["A"] = []
-    for_comparison["B"] = []
-    for_comparison["G"] = []
-    for_comparison["D"] = []
-    for_comparison["H"] = []
-    for_comparison["K"] = []
-    for_comparison["L"] = []
+    for_comparison = {"A": [], "B": [], "G": [], "D": [], "H": [], "K": [], "L": []}
     for j in keys:
         if j[0] == "A":
             x_axis = TRAV
@@ -97,18 +87,13 @@ True or False\n"
             zmax = args.zhighlambda
             zmin = args.zlowlambda
 
-        x_axis_ticks = []
-        for i in range(0, len(x_axis)):
-            x_axis_ticks.append(i)
-
+        x_axis_ticks = list(range(len(x_axis)))
         df = samples.get_group(j)
 
-        new_df = df.pivot_table(
-            index=["v_call", "CDR3_length"], aggfunc="size"
-        ).reset_index()
+        new_df = df.pivot_table(index=["v_call", "CDR3_length"], aggfunc="size").reset_index()
         new_df.rename(columns={0: "counts"}, inplace=True)
 
-        # create an empty df to serve as base
+        # Create an empty df to serve as base
         empty_df = pd.DataFrame(columns=["v_call", "CDR3_length", "counts"])
         x_axis_names = []
         for v_genes, colour in x_axis.items():
@@ -122,33 +107,20 @@ True or False\n"
             else:
                 limitymax = ymax - 1
             for c in range(limitymin, limitymax):
-                df_new_row = pd.DataFrame(
-                    {"v_call": [v_genes], "CDR3_length": [c], "counts": [0]}
-                )
+                df_new_row = pd.DataFrame({"v_call": [v_genes], "CDR3_length": [c], "counts": [0]})
                 empty_df = pd.concat([empty_df, df_new_row])
 
         df_merged = pd.concat([new_df, empty_df], ignore_index=True, sort=True)
-
         final_df = df_merged.groupby(["v_call", "CDR3_length"]).sum().reset_index()
-        final_df["frequency"] = 100 * (
-            final_df["counts"] / final_df["counts"].sum()
-        )  # .round(3)
-        final_df = final_df.sort_values(
-            by=["CDR3_length", "v_call"], key=natsort_keygen()
-        )
+        final_df["frequency"] = 100 * (final_df["counts"] / final_df["counts"].sum())
+        final_df = final_df.sort_values(by=["CDR3_length", "v_call"], key=natsort_keygen())
         df_grouped = final_df.groupby(["v_call", "CDR3_length"]).sum()
         df_reset = df_grouped.reset_index()
-        df_reformat = (
-            df_reset.pivot(index="v_call", columns="CDR3_length", values="frequency")
-            .reset_index()
-            .rename_axis(index=None, columns=None)
-        )
+        df_reformat = df_reset.pivot(index="v_call", columns="CDR3_length", values="frequency").reset_index().rename_axis(index=None, columns=None)
         df_sorted = df_reformat.sort_values(by=["v_call"], key=natsort_keygen())
 
         if args.export.lower() in ["true"]:
-            df_filename = (
-                args.rearrangements[:-4] + "_vgenes_table" + j[1] + "_" + j[0] + ".csv"
-            )
+            df_filename = args.rearrangements[:-4] + "_vgenes_table" + j[1] + "_" + j[0] + ".csv"
             df_sorted.to_csv(df_filename, index=False)
 
         x = df_sorted["v_call"].factorize()[0]
@@ -159,39 +131,14 @@ True or False\n"
             z = np.append(z, np.array(df_transpose.values.tolist()[i]))
         z = np.array_split(z, len(df_sorted.columns) - 1)
 
-        datasets.append(
-            [
-                x,
-                y,
-                z,
-                plot_aspect,
-                x_size,
-                ymin,
-                ymax,
-                zmin,
-                zmax,
-                x_axis_ticks,
-                x_axis_names,
-                j[0],
-                j[1],
-                False,
-            ]
-        )
-        for_comparison[j[0]].append(
-            [
-                df_sorted,
-                plot_aspect,
-                x_size,
-                ymin,
-                ymax,
-                zmin,
-                zmax,
-                x_axis_ticks,
-                x_axis_names,
-                j[0] + "_comparison",
-                j[1],
-            ]
-        )
+        datasets.append([
+            x, y, z, plot_aspect, x_size, ymin, ymax, zmin, zmax,
+            x_axis_ticks, x_axis_names, j[0], j[1], False,
+        ])
+        for_comparison[j[0]].append([
+            df_sorted, plot_aspect, x_size, ymin, ymax, zmin, zmax,
+            x_axis_ticks, x_axis_names, j[0] + "_comparison", j[1],
+        ])
 
     if args.compare.lower() == "false":
         return datasets
@@ -199,27 +146,18 @@ True or False\n"
         comparisons = []
         for m in for_comparison:
             if len(for_comparison[m]) < 2:
-                sys.stderr.write(
-                    "Less than 2 repertoires from the "
-                    + m
-                    + " chain were detected in the rearragements file\n"
-                )
+                sys.stderr.write("Less than 2 repertoires from the " + m + " chain were detected in the rearragements file\n")
             if len(for_comparison[m]) > 2:
-                sys.stderr.write(
-                    "More than 2 repertoires from the "
-                    + m
-                    + " chain were detected in the rearragements file\n"
-                )
+                sys.stderr.write("More than 2 repertoires from the " + m + " chain were detected in the rearragements file\n")
             if len(for_comparison[m]) == 2:
                 comb = for_comparison[m]
-                num1 = comb[0][0].copy()
-                num1 = num1.drop("v_call", axis=1)
-                num2 = comb[1][0].copy()
-                num2 = num2.drop("v_call", axis=1)
+                num1 = comb[0][0].copy().drop("v_call", axis=1)
+                num2 = comb[1][0].copy().drop("v_call", axis=1)
+                # Append infer_objects() after fillna to avoid FutureWarning
                 comparison1 = num1 - num2
-                comparison1 = comparison1.fillna(0)
+                comparison1 = comparison1.fillna(0).infer_objects()
                 comparison2 = num2 - num1
-                comparison2 = comparison2.fillna(0)
+                comparison2 = comparison2.fillna(0).infer_objects()
                 comparison1.insert(0, "v_call", comb[0][0]["v_call"])
                 comparison2.insert(0, "v_call", comb[0][0]["v_call"])
 
@@ -248,24 +186,10 @@ True or False\n"
                     z = np.append(z, np.array(df_transpose.values.tolist()[i]))
                 z = np.array_split(z, len(comparison1.columns) - 1)
 
-                comparisons.append(
-                    [
-                        x,
-                        y,
-                        z,
-                        comb[0][1],
-                        comb[0][2],
-                        ymin,
-                        ymax,
-                        zmin,
-                        zmax,
-                        comb[0][7],
-                        comb[0][8],
-                        comb[0][9],
-                        comb[0][10],
-                        True,
-                    ]
-                )
+                comparisons.append([
+                    x, y, z, comb[0][1], comb[0][2], ymin, ymax, zmin, zmax,
+                    comb[0][7], comb[0][8], comb[0][9], comb[0][10], True,
+                ])
 
                 x = comparison2["v_call"].factorize()[0]
                 y = np.array(comparison2.columns.values.tolist()[1:])
@@ -275,31 +199,198 @@ True or False\n"
                     z = np.append(z, np.array(df_transpose.values.tolist()[i]))
                 z = np.array_split(z, len(comparison2.columns) - 1)
 
-                comparisons.append(
-                    [
-                        x,
-                        y,
-                        z,
-                        comb[1][1],
-                        comb[1][2],
-                        ymin,
-                        ymax,
-                        zmin,
-                        zmax,
-                        comb[1][7],
-                        comb[1][8],
-                        comb[1][9],
-                        comb[1][10],
-                        True,
-                    ]
-                )
-    return comparisons
+                comparisons.append([
+                    x, y, z, comb[1][1], comb[1][2], ymin, ymax, zmin, zmax,
+                    comb[1][7], comb[1][8], comb[1][9], comb[1][10], True,
+                ])
+        return comparisons
+
 
 def barplot(args):
     samples_df = tcrcloud.format.format_data(args)
-
     formatted_samples = tcrcloud.format.format_vgene(samples_df)
 
+    # If the spectratyping flag is set, generate the 2D spectratyping plots
+    if getattr(args, "spectratyping", False):
+        # plt, np, or pd are allready imported globally.
+        # Process each chain (A, B, G, D, H, K, L)
+        chains = formatted_samples['chain'].unique()
+
+        # Maps chain letters to the color dictionaries
+        colour_dicts = {
+            "A": TRAV, "B": TRBV, "G": TRGV, "D": TRDV,
+            "H": IGHV, "K": IGKV, "L": IGLV
+        }
+
+        for chain in chains:
+            df_chain = formatted_samples[formatted_samples["chain"] == chain]
+            if df_chain.empty:
+                continue
+
+            # Build a pivot table: rows = v_call, columns = CDR3_length, fill missing with 0
+            pivot_df = df_chain.pivot_table(
+                index="v_call",
+                columns="CDR3_length",
+                aggfunc="size",
+                fill_value=0
+            )
+
+            # Reindex rows to include all calls from the chain dictionary (even absent ones)
+            chain_colours = colour_dicts.get(chain, {})
+            all_calls_for_chain = list(chain_colours.keys())  # preserve dictionary order
+            pivot_df = pivot_df.reindex(all_calls_for_chain, fill_value=0)
+
+            # Convert counts to frequencies
+            total = pivot_df.values.sum()
+            freq_df = pivot_df * 100 / total if total > 0 else pivot_df
+
+            # --------------------------
+            # 1) Comparison Mode
+            # --------------------------
+            if args.compare.lower() == "true":
+                # Must have exactly 2 repertoires to compare
+                rep_groups = df_chain.groupby("repertoire_id")
+                if len(rep_groups) != 2:
+                    sys.stderr.write(
+                        f"Chain {chain} in compare mode requires exactly 2 repertoires. Skipping chain.\n"
+                    )
+                    continue
+
+                # Build freq tables per repertoire
+                freq_dfs = {}
+                for rep, df_rep in rep_groups:
+                    pivot_rep = df_rep.pivot_table(
+                        index="v_call", columns="CDR3_length", aggfunc="size", fill_value=0
+                    )
+                    # Reindex so every call from the chain dictionary appears
+                    pivot_rep = pivot_rep.reindex(all_calls_for_chain, fill_value=0)
+
+                    total_rep = pivot_rep.values.sum()
+                    freq_dfs[rep] = pivot_rep * 100 / total_rep if total_rep > 0 else pivot_rep
+
+                # Union of all V calls
+                union_v_calls = all_calls_for_chain  # same order as dictionary
+                
+                n_plots = len(union_v_calls)
+                n_cols = int(np.ceil(np.sqrt(n_plots)))
+                n_rows = int(np.ceil(n_plots / n_cols))
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
+                axs = axs.flatten()
+
+                # Determine a global y‑axis max across all V calls & both reps
+                all_values = []
+                for rep_df in freq_dfs.values():
+                    all_values.extend(rep_df.values.flatten())
+                y_max = max(all_values) if len(all_values) > 0 else 0
+
+                # We’ll define two contrasting colors
+                compare_colors = ["#1f77b4", "#d62728"]
+                reps = list(freq_dfs.keys())
+                width = 0.4  # bar width for side‑by‑side
+
+                # For each V call, create one subplot
+                for i, v_call in enumerate(union_v_calls):
+                    ax = axs[i]
+
+                    # For each repertoire, draw bars side by side
+                    for j, rep in enumerate(reps):
+                        # Get the frequency row for this v_call (or zero if missing)
+                        df_rep = freq_dfs[rep]
+                        row = df_rep.loc[v_call]
+                        # Ensure the x_values are the union of all lengths in df_rep.columns
+                        x_values = np.array(sorted(df_rep.columns))
+                        y_values = row.reindex(x_values, fill_value=0).values
+
+                        # Offset each bar to the left or right
+                        offset = (-width / 2) if j == 0 else (width / 2)
+                        ax.bar(
+                            x_values + offset,
+                            y_values,
+                            width=width,
+                            color=compare_colors[j],
+                            label=f"Rep {rep}" if i == 0 else ""  # legend label only for top row
+                        )
+
+                    ax.set_title(v_call)
+                    ax.set_xlabel("CDR3 Length")
+                    ax.set_ylabel("% of reads")
+                    # Set the same y‑range across all subplots
+                    ax.set_ylim([0, y_max * 1.1])
+
+                    # Integer ticks for each CDR3 length
+                    ax.set_xticks(x_values)
+                    ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
+
+                # Hide any unused subplots
+                for j in range(n_plots, len(axs)):
+                    axs[j].axis("off")
+
+                # Create a single legend for the entire figure (top-right)
+                handles, labels = axs[0].get_legend_handles_labels()
+                fig.legend(handles, labels, loc="upper right")
+
+                plt.suptitle(f"Spectratyping Compare Mode - Chain {chain}")
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.96)
+                outputname = args.rearrangements[:-4] + f"_spectratyping_compare_chain_{chain}.png"
+                plt.savefig(outputname)
+                print(f"Spectratyping compare image saved as {outputname}")
+
+            # --------------------------
+            # 2) Non‑Comparison Mode
+            # --------------------------
+            else:
+                v_calls = all_calls_for_chain  # same order as dictionary
+                n_plots = len(v_calls)
+                n_cols = int(np.ceil(np.sqrt(n_plots)))
+                n_rows = int(np.ceil(n_plots / n_cols))
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
+                axs = axs.flatten()
+
+                # Determine a global y‑axis max
+                y_max = freq_df.values.max() if freq_df.size > 0 else 0
+
+                for i, v_call in enumerate(v_calls):
+                    ax = axs[i]
+                    # Reindex the row so it matches the full set of CDR3 lengths
+                    row = freq_df.loc[v_call]
+                    x_values = np.array(sorted(freq_df.columns), dtype=float)
+                    y_values = row.reindex(x_values, fill_value=0).values
+
+                    # Use the colour from the dictionary; default to grey if not found
+                    colour = chain_colours.get(v_call, "#808080")
+
+                    # Make a bar plot
+                    ax.bar(x_values, y_values, color=colour)
+
+                    ax.set_title(v_call)
+                    ax.set_xlabel("CDR3 Length")
+                    ax.set_ylabel("% of reads")
+
+                    # Same Y range for all subplots
+                    ax.set_ylim([0, y_max * 1.1])
+
+                    # Integer ticks for all CDR3 lengths
+                    ax.set_xticks(x_values)
+                    ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
+
+                # Hide any unused subplots
+                for j in range(n_plots, len(axs)):
+                    axs[j].axis("off")
+
+                # If you wanted a single legend for all v_calls, you could do so here
+                # But typically each subplot is just one bar series, so a legend is not essential.
+
+                plt.suptitle(f"Spectratyping - Chain {chain}")
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.96)
+                outputname = args.rearrangements[:-4] + f"_spectratyping_chain_{chain}.png"
+                plt.savefig(outputname)
+                print(f"Spectratyping image saved as {outputname}")
+
+        return  # Exit after generating spectratyping plots
+
+    # Continue with existing 3D surface plots
     samples = formatted_samples.groupby(["chain", "repertoire_id"])
     keys = [key for key, _ in samples]
     datasets = get_table(keys, samples, args)
@@ -310,13 +401,10 @@ def barplot(args):
         dataset = [*dataset, dataset[0]]
 
         if i[13] is False:
-            fig = go.Figure(
-                go.Surface(
-                    x=i[0], y=i[1], z=i[2], colorscale="Turbo", cmin=i[7], cmax=i[8]
-                )
-            )
+            fig = go.Figure(go.Surface(
+                x=i[0], y=i[1], z=i[2], colorscale="Turbo", cmin=i[7], cmax=i[8]
+            ))
             camera = dict(eye=dict(x=2.5, y=-3.5, z=2.5))
-
             sc = dict(
                 aspectratio=dict(x=i[3][0], y=i[3][1], z=i[3][2]),
                 xaxis_title=i[10][0][:4],
@@ -329,14 +417,9 @@ def barplot(args):
                     tickfont=dict(size=i[4]),
                     titlefont=dict(size=10),
                 ),
-                yaxis=dict(
-                    tickfont=dict(size=8), titlefont=dict(size=10), range=[i[5], i[6]]
-                ),
-                zaxis=dict(
-                    tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]
-                ),
+                yaxis=dict(tickfont=dict(size=8), titlefont=dict(size=10), range=[i[5], i[6]]),
+                zaxis=dict(tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]),
             )
-
             fig.update_layout(
                 width=700,
                 margin=dict(r=10, l=10, b=10, t=10),
@@ -344,21 +427,16 @@ def barplot(args):
                 scene=sc,
                 template="plotly_white",
             )
-            outputname = (
-                args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
-            )
+            outputname = args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
             fig.write_image(outputname, scale=6)
             print("V genes plot saved as " + outputname)
 
         if i[13] is True:
             i = datasets[0]
-            fig = go.Figure(
-                go.Surface(
-                    x=i[0], y=i[1], z=i[2], colorscale="Portland", cmin=i[7], cmax=i[8]
-                )
-            )
+            fig = go.Figure(go.Surface(
+                x=i[0], y=i[1], z=i[2], colorscale="Portland", cmin=i[7], cmax=i[8]
+            ))
             camera = dict(eye=dict(x=2.5, y=-5, z=0.5))
-
             sc = dict(
                 aspectratio=dict(x=i[3][0], y=i[3][1], z=i[3][2]),
                 xaxis_title=i[10][0][:4],
@@ -372,14 +450,9 @@ def barplot(args):
                     tickangle=-45,
                     titlefont=dict(size=10),
                 ),
-                yaxis=dict(
-                    tickfont=dict(size=6), titlefont=dict(size=10), range=[i[5], i[6]]
-                ),
-                zaxis=dict(
-                    tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]
-                ),
+                yaxis=dict(tickfont=dict(size=6), titlefont=dict(size=10), range=[i[5], i[6]]),
+                zaxis=dict(tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]),
             )
-
             fig.update_layout(
                 width=700,
                 margin=dict(r=10, l=10, b=10, t=10),
@@ -387,25 +460,15 @@ def barplot(args):
                 scene=sc,
                 template="plotly_white",
             )
-            outputname = (
-                args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
-            )
+            outputname = args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
             fig.write_image(outputname, scale=6)
             print("V genes plot saved as " + outputname)
 
             i = datasets[1]
-            fig = go.Figure(
-                go.Surface(
-                    x=i[0],
-                    y=i[1],
-                    z=i[2],
-                    colorscale="Portland_r",
-                    cmin=i[7],
-                    cmax=i[8],
-                )
-            )
+            fig = go.Figure(go.Surface(
+                x=i[0], y=i[1], z=i[2], colorscale="Portland_r", cmin=i[7], cmax=i[8]
+            ))
             camera = dict(eye=dict(x=2.5, y=-5, z=0.5))
-
             sc = dict(
                 aspectratio=dict(x=i[3][0], y=i[3][1], z=i[3][2]),
                 xaxis_title=i[10][0][:4],
@@ -419,14 +482,9 @@ def barplot(args):
                     tickangle=-45,
                     titlefont=dict(size=10),
                 ),
-                yaxis=dict(
-                    tickfont=dict(size=6), titlefont=dict(size=10), range=[i[5], i[6]]
-                ),
-                zaxis=dict(
-                    tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]
-                ),
+                yaxis=dict(tickfont=dict(size=6), titlefont=dict(size=10), range=[i[5], i[6]]),
+                zaxis=dict(tickfont=dict(size=8), titlefont=dict(size=10), range=[i[7], i[8]]),
             )
-
             fig.update_layout(
                 width=700,
                 margin=dict(r=10, l=10, b=10, t=10),
@@ -434,9 +492,7 @@ def barplot(args):
                 scene=sc,
                 template="plotly_white",
             )
-            outputname = (
-                args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
-            )
+            outputname = args.rearrangements[:-4] + "_vgenes_" + i[12] + "_" + i[11] + ".png"
             fig.write_image(outputname, scale=6)
             print("V genes plot saved as " + outputname)
             break
