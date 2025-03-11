@@ -4,6 +4,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import plotly.graph_objects as go
 from natsort import natsort_keygen
 
@@ -19,7 +20,6 @@ TRDV = tcrcloud.colours.TRDV
 IGHV = tcrcloud.colours.IGHV
 IGKV = tcrcloud.colours.IGKV
 IGLV = tcrcloud.colours.IGLV
-
 
 def get_table(keys, samples, args):
     if args.compare.lower() != "true":
@@ -205,190 +205,378 @@ def get_table(keys, samples, args):
                 ])
         return comparisons
 
+def generate_spectratyping_plots(args, formatted_samples):
+    # Process each chain (A, B, G, D, H, K, L)
+    chains = formatted_samples['chain'].unique()
+    colour_dicts = {
+        "A": TRAV, "B": TRBV, "G": TRGV, "D": TRDV,
+        "H": IGHV, "K": IGKV, "L": IGLV
+    }
+
+    for chain in chains:
+        df_chain = formatted_samples[formatted_samples["chain"] == chain]
+        if df_chain.empty:
+            continue
+
+        # Build a pivot table: rows = v_call, columns = CDR3_length, fill missing with 0
+        pivot_df = df_chain.pivot_table(
+            index="v_call",
+            columns="CDR3_length",
+            aggfunc="size",
+            fill_value=0
+        )
+
+        # Reindex rows to include all calls from the chain dictionary (even absent ones)
+        chain_colours = colour_dicts.get(chain, {})
+        all_calls_for_chain = list(chain_colours.keys())  # preserve dictionary order
+        pivot_df = pivot_df.reindex(all_calls_for_chain, fill_value=0)
+
+        # Convert counts to frequencies
+        total = pivot_df.values.sum()
+        freq_df = pivot_df * 100 / total if total > 0 else pivot_df
+
+        # --------------------------
+        # 1) Comparison Mode
+        # --------------------------
+        if args.compare.lower() == "true":
+            # Must have exactly 2 repertoires to compare
+            rep_groups = df_chain.groupby("repertoire_id")
+            if len(rep_groups) != 2:
+                sys.stderr.write(
+                    f"Chain {chain} in compare mode requires exactly 2 repertoires. Skipping chain.\n"
+                )
+                continue
+
+            # Build freq tables per repertoire
+            freq_dfs = {}
+            for rep, df_rep in rep_groups:
+                pivot_rep = df_rep.pivot_table(
+                    index="v_call", columns="CDR3_length", aggfunc="size", fill_value=0
+                )
+                # Reindex so every call from the chain dictionary appears
+                pivot_rep = pivot_rep.reindex(all_calls_for_chain, fill_value=0)
+                total_rep = pivot_rep.values.sum()
+                freq_dfs[rep] = pivot_rep * 100 / total_rep if total_rep > 0 else pivot_rep
+
+            # Union of all V calls
+            union_v_calls = all_calls_for_chain  # same order as dictionary
+                
+            n_plots = len(union_v_calls)
+            n_cols = int(np.ceil(np.sqrt(n_plots)))
+            n_rows = int(np.ceil(n_plots / n_cols))
+            fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
+            axs = axs.flatten()
+
+            # Determine a global y‑axis max across all V calls & both reps
+            all_values = []
+            for rep_df in freq_dfs.values():
+                all_values.extend(rep_df.values.flatten())
+            y_max = max(all_values) if len(all_values) > 0 else 0
+
+            # We’ll define two contrasting colors
+            compare_colors = ["#1f77b4", "#d62728"]
+            reps = list(freq_dfs.keys())
+            width = 0.4  # bar width for side‑by‑side
+
+            # For each V call, create one subplot
+            for i, v_call in enumerate(union_v_calls):
+                ax = axs[i]
+
+                # For each repertoire, draw bars side by side
+                for j, rep in enumerate(reps):
+                    # Get the frequency row for this v_call (or zero if missing)
+                    df_rep = freq_dfs[rep]
+                    row = df_rep.loc[v_call]
+                    # Ensure the x_values are the union of all lengths in df_rep.columns
+                    x_values = np.array(sorted(df_rep.columns))
+                    y_values = row.reindex(x_values, fill_value=0).values
+
+                    # Offset each bar to the left or right
+                    offset = (-width / 2) if j == 0 else (width / 2)
+                    ax.bar(
+                        x_values + offset,
+                        y_values,
+                        width=width,
+                        color=compare_colors[j],
+                        label=f"Rep {rep}" if i == 0 else ""  # legend label only for top row
+                    )
+
+                ax.set_title(v_call)
+                ax.set_xlabel("CDR3 Length")
+                ax.set_ylabel("% of reads")
+                # Set the same y‑range across all subplots
+                ax.set_ylim([0, y_max * 1.1])
+
+                # Integer ticks for each CDR3 length
+                ax.set_xticks(x_values)
+                ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
+
+            # Hide any unused subplots
+            for j in range(n_plots, len(axs)):
+                axs[j].axis("off")
+
+            # Create a single legend for the entire figure (top-right)
+            handles, labels = axs[0].get_legend_handles_labels()
+            fig.legend(handles, labels, loc="upper right")
+
+            plt.suptitle(f"Spectratyping Compare Mode - Chain {chain}")
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.96)
+            outputname = args.rearrangements[:-4] + f"_spectratyping_compare_chain_{chain}.png"
+            plt.savefig(outputname)
+            print(f"Spectratyping compare image saved as {outputname}")
+
+        # --------------------------
+        # 2) Non‑Comparison Mode
+        # --------------------------
+        else:
+            v_calls = all_calls_for_chain  # same order as dictionary
+            n_plots = len(v_calls)
+            n_cols = int(np.ceil(np.sqrt(n_plots)))
+            n_rows = int(np.ceil(n_plots / n_cols))
+            fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
+            axs = axs.flatten()
+
+            # Determine a global y‑axis max
+            y_max = freq_df.values.max() if freq_df.size > 0 else 0
+
+            for i, v_call in enumerate(v_calls):
+                ax = axs[i]
+                # Reindex the row so it matches the full set of CDR3 lengths
+                row = freq_df.loc[v_call]
+                x_values = np.array(sorted(freq_df.columns), dtype=float)
+                y_values = row.reindex(x_values, fill_value=0).values
+
+                # Use the colour from the dictionary; default to grey if not found
+                colour = chain_colours.get(v_call, "#808080")
+
+                # Make a bar plot
+                ax.bar(x_values, y_values, color=colour)
+
+                ax.set_title(v_call)
+                ax.set_xlabel("CDR3 Length")
+                ax.set_ylabel("% of reads")
+
+                # Same Y range for all subplots
+                ax.set_ylim([0, y_max * 1.1])
+
+                # Integer ticks for all CDR3 lengths
+                ax.set_xticks(x_values)
+                ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
+
+            # Hide any unused subplots
+            for j in range(n_plots, len(axs)):
+                axs[j].axis("off")
+            plt.suptitle(f"Spectratyping - Chain {chain}")
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.96)
+            outputname = args.rearrangements[:-4] + f"_spectratyping_chain_{chain}.png"
+            plt.savefig(outputname)
+            print(f"Spectratyping image saved as {outputname}")
+
+def generate_vj_heatmap(args, formatted_samples):
+    # Get J-gene dictionary from tcrcloud.colours
+    j_gene_dicts = {
+        "A": tcrcloud.colours.TRAJ,
+        "B": tcrcloud.colours.TRBJ,
+        "G": tcrcloud.colours.TRGJ,
+        "D": tcrcloud.colours.TRDJ,
+        "H": tcrcloud.colours.IGHJ,
+        "K": tcrcloud.colours.IGKJ,
+        "L": tcrcloud.colours.IGLJ
+    }
+
+    v_gene_dicts = {
+        "A": tcrcloud.colours.TRAV,
+        "B": tcrcloud.colours.TRBV,
+        "G": tcrcloud.colours.TRGV,
+        "D": tcrcloud.colours.TRDV,
+        "H": tcrcloud.colours.IGHV,
+        "K": tcrcloud.colours.IGKV,
+        "L": tcrcloud.colours.IGLV
+    }
+
+    # Process each chain separately
+    chains = formatted_samples["chain"].unique()
+
+    for chain in chains:
+        df_chain = formatted_samples[formatted_samples["chain"] == chain]
+        if df_chain.empty:
+            continue
+
+        # Group by repertoire_id (in case comparison is flagged)
+        rep_groups = df_chain.groupby("repertoire_id")
+
+        # Get corresponding V and J genes dictionary and sort it
+        v_gene_set = v_gene_dicts.get(chain, set())
+        j_gene_set = j_gene_dicts.get(chain, set())
+        # Ensure V and J genes columns are correctly ordered
+        all_v_genes = sorted(v_gene_set)
+        all_j_genes = sorted(j_gene_set)
+
+        # --------------------------------------------------
+        # 1) Comparison Mode
+        # --------------------------------------------------
+        if args.compare.lower() == "true":
+            if len(rep_groups) != 2:
+                sys.stderr.write(
+                    f"Chain {chain} in compare mode requires exactly 2 repertoires. Skipping chain.\n"
+                )
+                continue
+
+            # Extract each repertoire’s data
+            rep_keys = list(rep_groups.groups.keys())  # e.g. ["rep1", "rep2"]
+            rep1, rep2 = rep_keys[0], rep_keys[1]
+
+            df_rep1 = rep_groups.get_group(rep1)
+            df_rep2 = rep_groups.get_group(rep2)
+
+            # Build pivot tables: rows=V, cols=J
+            pivot1 = df_rep1.pivot_table(
+                index="v_call", columns="j_call", aggfunc="size", fill_value=0
+            )
+            pivot2 = df_rep2.pivot_table(
+                index="v_call", columns="j_call", aggfunc="size", fill_value=0
+            )
+
+            # Reindex so every V and J gene is present
+            pivot1 = pivot1.reindex(index=all_v_genes, columns=all_j_genes, fill_value=0)
+            pivot2 = pivot2.reindex(index=all_v_genes, columns=all_j_genes, fill_value=0)
+
+            # Convert to relative frequencies
+            total1 = pivot1.values.sum()
+            total2 = pivot2.values.sum()
+            freq1 = (pivot1 * 100 / total1) if total1 > 0 else pivot1
+            freq2 = (pivot2 * 100 / total2) if total2 > 0 else pivot2
+
+            # Create two difference DataFrames: (rep1 - rep2) and (rep2 - rep1)
+            diff1 = freq1 - freq2  # If positive => rep1 higher
+            diff2 = freq2 - freq1  # If positive => rep2 higher
+
+            # Define a diverging colormap with center at 0
+            cmap = plt.cm.RdBu_r  # red for +, blue for -, white near 0
+
+            # Set figure size and resolution dynamically
+            if chain == "A":  # TRAJ has 61 entries, needs higher resolution
+                fig_width, fig_height, dpi = 14, 10, 400
+                x_fontsize = 7  # Reduce font size for x-axis labels
+            elif chain in ["B", "K", "L", "H"]:  # Chains with crowded Y-axis
+                fig_width, fig_height, dpi = 10, 16, 400  # Increase height
+                x_fontsize = 10
+            else:
+                fig_width, fig_height, dpi = 10, 10, 300
+                x_fontsize = 10  # Normal font size for smaller chains
+
+            # ------------- Plot diff1 (rep1 - rep2) -------------
+            plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
+            data_min = diff1.values.min()
+            data_max = diff1.values.max()
+            # Center the color scale at 0
+            norm = mcolors.TwoSlopeNorm(vmin=data_min, vcenter=0, vmax=data_max)
+
+            plt.imshow(diff1, aspect="auto", interpolation="nearest", cmap=cmap, norm=norm)
+            plt.colorbar(label="(Rep1 - Rep2) % Difference")
+            plt.xlabel(f"{chain}-J Calls", fontsize=x_fontsize)
+            plt.ylabel(f"{chain}-V Calls", fontsize=10)
+            plt.title(f"VJ Pairing Heatmap Difference ({chain} Chain)\n{rep1} - {rep2}")
+
+            # Set tick labels
+            plt.xticks(ticks=range(len(all_j_genes)), labels=all_j_genes, rotation=45, fontsize=x_fontsize)
+            plt.yticks(ticks=range(len(all_v_genes)), labels=all_v_genes, fontsize=10)
+
+            plt.tight_layout()
+            outname1 = args.rearrangements[:-4] + f"_VJ_heatmap_{chain}_{rep1}_minus_{rep2}.png"
+            plt.savefig(outname1, dpi=dpi)
+            print(f"VJ difference heatmap saved as {outname1}")
+
+            # ------------- Plot diff2 (rep2 - rep1) -------------
+            plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
+            data_min = diff2.values.min()
+            data_max = diff2.values.max()
+            # Center the color scale at 0
+            norm = mcolors.TwoSlopeNorm(vmin=data_min, vcenter=0, vmax=data_max)
+
+            plt.imshow(diff2, aspect="auto", interpolation="nearest", cmap=cmap, norm=norm)
+            plt.colorbar(label="(Rep2 - Rep1) % Difference")
+            plt.xlabel(f"{chain}-J Calls")
+            plt.ylabel(f"{chain}-V Calls")
+            plt.title(f"VJ Pairing Heatmap Difference ({chain} Chain)\n{rep2} - {rep1}")
+
+            # Set tick labels
+            plt.xticks(ticks=range(len(all_j_genes)), labels=all_j_genes, rotation=45, fontsize=x_fontsize)
+            plt.yticks(ticks=range(len(all_v_genes)), labels=all_v_genes, fontsize=10)
+
+            plt.tight_layout()
+            outname2 = args.rearrangements[:-4] + f"_VJ_heatmap_{chain}_{rep2}_minus_{rep1}.png"
+            plt.savefig(outname2)
+            print(f"VJ difference heatmap saved as {outname2}")
+
+        # --------------------------------------------------
+        # 2) Non-Comparison Mode
+        # --------------------------------------------------
+        else:
+            # Normal single heatmap: rows = V genes, columns = J genes
+            pivot_df = df_chain.pivot_table(
+                index="v_call",
+                columns="j_call",
+                aggfunc="size",
+                fill_value=0
+            )
+
+            # Ensure all expected V and J genes are included, even if absent in the data
+            pivot_df = pivot_df.reindex(index=all_v_genes, columns=all_j_genes, fill_value=0)
+
+            # Normalize counts to percentages
+            total = pivot_df.values.sum()
+            heatmap_data = (pivot_df * 100) / total if total > 0 else pivot_df
+
+            # Set figure size and resolution dynamically
+            if chain == "A":  # TRAJ has 61 entries, needs higher resolution
+                fig_width, fig_height, dpi = 14, 10, 400
+                x_fontsize = 7  # Reduce font size for x-axis labels
+            elif chain in ["B", "K", "L", "H"]:  # Chains with crowded Y-axis
+                fig_width, fig_height, dpi = 10, 16, 400  # Increase height
+                x_fontsize = 10
+            else:
+                fig_width, fig_height, dpi = 10, 10, 300
+                x_fontsize = 10  # Normal font size for smaller chains
+
+            # Generate heatmap
+            plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
+            # Use `"RdYlBu"` colormap
+            cmap = plt.cm.RdYlBu_r  # Reverse so red = high values
+            norm = mcolors.Normalize(vmin=heatmap_data.min().min(), vmax=heatmap_data.max().max())
+
+            # # to Restore the original colormap (Yellow = High, Blue = Low) change above 2 rows for:
+            # cmap = plt.cm.viridis  # Original colormap
+            # norm = mcolors.Normalize(vmin=heatmap_data.min().min(), vmax=heatmap_data.max().max())
+
+            plt.imshow(heatmap_data, aspect="auto", interpolation="nearest", cmap=cmap, norm=norm)
+            plt.colorbar(label="Relative Percentage")
+            plt.xlabel(f"{chain}-J Calls")
+            plt.ylabel(f"{chain}-V Calls")
+            plt.title(f"VJ Pairing Heatmap ({chain} Chain)")
+
+            # Set tick labels
+            plt.xticks(ticks=range(len(pivot_df.columns)), labels=pivot_df.columns, rotation=45, fontsize=x_fontsize)
+            plt.yticks(ticks=range(len(pivot_df.index)), labels=pivot_df.index, fontsize=10)
+
+            plt.tight_layout()
+            outputname = args.rearrangements[:-4] + f"_VJ_heatmap_{chain}.png"
+            plt.savefig(outputname, dpi=dpi)
+            print(f"VJ heatmap saved as {outputname}")
 
 def barplot(args):
     samples_df = tcrcloud.format.format_data(args)
     formatted_samples = tcrcloud.format.format_vgene(samples_df)
 
-    # If the spectratyping flag is set, generate the 2D spectratyping plots
+    # Generate spectratyping plots if the flag is set
     if getattr(args, "spectratyping", False):
-        # plt, np, or pd are allready imported globally.
-        # Process each chain (A, B, G, D, H, K, L)
-        chains = formatted_samples['chain'].unique()
+        generate_spectratyping_plots(args, formatted_samples)
 
-        # Maps chain letters to the color dictionaries
-        colour_dicts = {
-            "A": TRAV, "B": TRBV, "G": TRGV, "D": TRDV,
-            "H": IGHV, "K": IGKV, "L": IGLV
-        }
-
-        for chain in chains:
-            df_chain = formatted_samples[formatted_samples["chain"] == chain]
-            if df_chain.empty:
-                continue
-
-            # Build a pivot table: rows = v_call, columns = CDR3_length, fill missing with 0
-            pivot_df = df_chain.pivot_table(
-                index="v_call",
-                columns="CDR3_length",
-                aggfunc="size",
-                fill_value=0
-            )
-
-            # Reindex rows to include all calls from the chain dictionary (even absent ones)
-            chain_colours = colour_dicts.get(chain, {})
-            all_calls_for_chain = list(chain_colours.keys())  # preserve dictionary order
-            pivot_df = pivot_df.reindex(all_calls_for_chain, fill_value=0)
-
-            # Convert counts to frequencies
-            total = pivot_df.values.sum()
-            freq_df = pivot_df * 100 / total if total > 0 else pivot_df
-
-            # --------------------------
-            # 1) Comparison Mode
-            # --------------------------
-            if args.compare.lower() == "true":
-                # Must have exactly 2 repertoires to compare
-                rep_groups = df_chain.groupby("repertoire_id")
-                if len(rep_groups) != 2:
-                    sys.stderr.write(
-                        f"Chain {chain} in compare mode requires exactly 2 repertoires. Skipping chain.\n"
-                    )
-                    continue
-
-                # Build freq tables per repertoire
-                freq_dfs = {}
-                for rep, df_rep in rep_groups:
-                    pivot_rep = df_rep.pivot_table(
-                        index="v_call", columns="CDR3_length", aggfunc="size", fill_value=0
-                    )
-                    # Reindex so every call from the chain dictionary appears
-                    pivot_rep = pivot_rep.reindex(all_calls_for_chain, fill_value=0)
-
-                    total_rep = pivot_rep.values.sum()
-                    freq_dfs[rep] = pivot_rep * 100 / total_rep if total_rep > 0 else pivot_rep
-
-                # Union of all V calls
-                union_v_calls = all_calls_for_chain  # same order as dictionary
-                
-                n_plots = len(union_v_calls)
-                n_cols = int(np.ceil(np.sqrt(n_plots)))
-                n_rows = int(np.ceil(n_plots / n_cols))
-                fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
-                axs = axs.flatten()
-
-                # Determine a global y‑axis max across all V calls & both reps
-                all_values = []
-                for rep_df in freq_dfs.values():
-                    all_values.extend(rep_df.values.flatten())
-                y_max = max(all_values) if len(all_values) > 0 else 0
-
-                # We’ll define two contrasting colors
-                compare_colors = ["#1f77b4", "#d62728"]
-                reps = list(freq_dfs.keys())
-                width = 0.4  # bar width for side‑by‑side
-
-                # For each V call, create one subplot
-                for i, v_call in enumerate(union_v_calls):
-                    ax = axs[i]
-
-                    # For each repertoire, draw bars side by side
-                    for j, rep in enumerate(reps):
-                        # Get the frequency row for this v_call (or zero if missing)
-                        df_rep = freq_dfs[rep]
-                        row = df_rep.loc[v_call]
-                        # Ensure the x_values are the union of all lengths in df_rep.columns
-                        x_values = np.array(sorted(df_rep.columns))
-                        y_values = row.reindex(x_values, fill_value=0).values
-
-                        # Offset each bar to the left or right
-                        offset = (-width / 2) if j == 0 else (width / 2)
-                        ax.bar(
-                            x_values + offset,
-                            y_values,
-                            width=width,
-                            color=compare_colors[j],
-                            label=f"Rep {rep}" if i == 0 else ""  # legend label only for top row
-                        )
-
-                    ax.set_title(v_call)
-                    ax.set_xlabel("CDR3 Length")
-                    ax.set_ylabel("% of reads")
-                    # Set the same y‑range across all subplots
-                    ax.set_ylim([0, y_max * 1.1])
-
-                    # Integer ticks for each CDR3 length
-                    ax.set_xticks(x_values)
-                    ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
-
-                # Hide any unused subplots
-                for j in range(n_plots, len(axs)):
-                    axs[j].axis("off")
-
-                # Create a single legend for the entire figure (top-right)
-                handles, labels = axs[0].get_legend_handles_labels()
-                fig.legend(handles, labels, loc="upper right")
-
-                plt.suptitle(f"Spectratyping Compare Mode - Chain {chain}")
-                plt.tight_layout()
-                plt.subplots_adjust(top=0.96)
-                outputname = args.rearrangements[:-4] + f"_spectratyping_compare_chain_{chain}.png"
-                plt.savefig(outputname)
-                print(f"Spectratyping compare image saved as {outputname}")
-
-            # --------------------------
-            # 2) Non‑Comparison Mode
-            # --------------------------
-            else:
-                v_calls = all_calls_for_chain  # same order as dictionary
-                n_plots = len(v_calls)
-                n_cols = int(np.ceil(np.sqrt(n_plots)))
-                n_rows = int(np.ceil(n_plots / n_cols))
-                fig, axs = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), squeeze=False)
-                axs = axs.flatten()
-
-                # Determine a global y‑axis max
-                y_max = freq_df.values.max() if freq_df.size > 0 else 0
-
-                for i, v_call in enumerate(v_calls):
-                    ax = axs[i]
-                    # Reindex the row so it matches the full set of CDR3 lengths
-                    row = freq_df.loc[v_call]
-                    x_values = np.array(sorted(freq_df.columns), dtype=float)
-                    y_values = row.reindex(x_values, fill_value=0).values
-
-                    # Use the colour from the dictionary; default to grey if not found
-                    colour = chain_colours.get(v_call, "#808080")
-
-                    # Make a bar plot
-                    ax.bar(x_values, y_values, color=colour)
-
-                    ax.set_title(v_call)
-                    ax.set_xlabel("CDR3 Length")
-                    ax.set_ylabel("% of reads")
-
-                    # Same Y range for all subplots
-                    ax.set_ylim([0, y_max * 1.1])
-
-                    # Integer ticks for all CDR3 lengths
-                    ax.set_xticks(x_values)
-                    ax.set_xticklabels([str(int(x)) for x in x_values], rotation=45)
-
-                # Hide any unused subplots
-                for j in range(n_plots, len(axs)):
-                    axs[j].axis("off")
-
-                # If you wanted a single legend for all v_calls, you could do so here
-                # But typically each subplot is just one bar series, so a legend is not essential.
-
-                plt.suptitle(f"Spectratyping - Chain {chain}")
-                plt.tight_layout()
-                plt.subplots_adjust(top=0.96)
-                outputname = args.rearrangements[:-4] + f"_spectratyping_chain_{chain}.png"
-                plt.savefig(outputname)
-                print(f"Spectratyping image saved as {outputname}")
-
-        return  # Exit after generating spectratyping plots
+    # Generate VJ pairing heatmap if the flag is set
+    if getattr(args, "vj", False):
+        generate_vj_heatmap(args, formatted_samples)
 
     # Continue with existing 3D surface plots
     samples = formatted_samples.groupby(["chain", "repertoire_id"])
@@ -396,10 +584,6 @@ def barplot(args):
     datasets = get_table(keys, samples, args)
 
     for i in datasets:
-        fig = plt.figure(figsize=(10, 14))
-        dataset = i[1:]
-        dataset = [*dataset, dataset[0]]
-
         if i[13] is False:
             fig = go.Figure(go.Surface(
                 x=i[0], y=i[1], z=i[2], colorscale="Turbo", cmin=i[7], cmax=i[8]
@@ -431,7 +615,7 @@ def barplot(args):
             fig.write_image(outputname, scale=6)
             print("V genes plot saved as " + outputname)
 
-        if i[13] is True:
+        else:
             i = datasets[0]
             fig = go.Figure(go.Surface(
                 x=i[0], y=i[1], z=i[2], colorscale="Portland", cmin=i[7], cmax=i[8]

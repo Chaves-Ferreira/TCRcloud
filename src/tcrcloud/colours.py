@@ -461,3 +461,40 @@ aminoacids = {
     "K": "#8400CD",  # Vivid Purple (Lys)
     "H": "#FF3CFE",  # Neon Magenta (Least Positively Charged - His)
 }
+
+# J-gene dictionaries for each chain
+
+TRAJ = {
+    "TRAJ1", "TRAJ2", "TRAJ3", "TRAJ4", "TRAJ5", "TRAJ6", "TRAJ7", "TRAJ8", "TRAJ9", "TRAJ10",
+    "TRAJ11", "TRAJ12", "TRAJ13", "TRAJ14", "TRAJ15", "TRAJ16", "TRAJ17", "TRAJ18", "TRAJ19", "TRAJ20",
+    "TRAJ21", "TRAJ22", "TRAJ23", "TRAJ24", "TRAJ25", "TRAJ26", "TRAJ27", "TRAJ28", "TRAJ29", "TRAJ30",
+    "TRAJ31", "TRAJ32", "TRAJ33", "TRAJ34", "TRAJ35", "TRAJ36", "TRAJ37", "TRAJ38", "TRAJ39", "TRAJ40",
+    "TRAJ41", "TRAJ42", "TRAJ43", "TRAJ44", "TRAJ45", "TRAJ46", "TRAJ47", "TRAJ48", "TRAJ49", "TRAJ50",
+    "TRAJ51", "TRAJ52", "TRAJ53", "TRAJ54", "TRAJ55", "TRAJ56", "TRAJ57", "TRAJ58", "TRAJ59", "TRAJ60",
+    "TRAJ61"
+}
+
+TRBJ = {
+    "TRBJ1-1", "TRBJ1-2", "TRBJ1-3", "TRBJ1-4", "TRBJ1-5", "TRBJ1-6",
+    "TRBJ2-1", "TRBJ2-2", "TRBJ2-2P", "TRBJ2-3", "TRBJ2-4", "TRBJ2-5", "TRBJ2-6", "TRBJ2-7"
+}
+
+TRGJ = {
+    "TRGJP1", "TRGJP", "TRGJ1", "TRGJP2", "TRGJ2"
+}
+
+TRDJ = {
+    "TRDJ1", "TRDJ2", "TRDJ3", "TRDJ4"
+}
+
+IGHJ = {
+    "IGHJ1", "IGHJ1P", "IGHJ2", "IGHJ2P", "IGHJ3", "IGHJ4", "IGHJ5", "IGHJ3P", "IGHJ6"
+}
+
+IGKJ = {
+    "IGKJ1", "IGKJ2", "IGKJ3", "IGKJ4", "IGKJ5"
+}
+
+IGLJ = {
+    "IGLJ1", "IGLJ2", "IGLJ3", "IGLJ4", "IGLJ5", "IGLJ6", "IGLJ7"
+}

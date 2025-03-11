@@ -1,7 +1,7 @@
 import pandas as pd
-
 import airr
 
+import tcrcloud.colours
 
 def format_data(args):
     with open(args.rearrangements) as f:
@@ -70,9 +70,12 @@ def format_data(args):
     # keep only one first V gene when there are multiple in the column
     df["v_call"] = df.v_call.str.split(",", n=1, expand=True)[0]
 
-    # remove allele information from v_call and keep only the gene information
+    # remove allele information from v_call and j_call and keep only the gene information
     if "*" in str(df.v_call.head(1)):
         df["v_call"] = df.apply(lambda x: x["v_call"][:-3], axis=1)
+
+    if "*" in str(df.j_call.head(1)):
+        df["j_call"] = df["j_call"].str.split("*").str[0]
 
     # create column with chain information
     df["chain"] = df.apply(lambda x: x["v_call"][2], axis=1)
@@ -144,26 +147,36 @@ def format_cloud(df):
 def format_vgene(df):
     if "duplicate_count" in df.columns:
         aggregate = df.loc[
-            :, ("junction_aa", "v_call", "repertoire_id", "chain", "duplicate_count")
+            :, ("junction_aa", "v_call", "j_call", "repertoire_id", "chain", "duplicate_count")
         ]
         del df
         aggregate.rename(columns={"duplicate_count": "counts"}, inplace=True)
         aggregate = (
-            aggregate.groupby(["junction_aa", "v_call", "repertoire_id", "chain"])
+            aggregate.groupby(["junction_aa", "v_call", "j_call", "repertoire_id", "chain"])
             .sum()
             .reset_index()
         )
         aggregate = aggregate.sort_values(by="counts", ascending=False)
     else:
         aggregate = df.pivot_table(
-            index=["junction_aa", "v_call", "repertoire_id", "chain"], aggfunc="size"
+            index=["junction_aa", "v_call", "j_call", "repertoire_id", "chain"], aggfunc="size"
         ).reset_index()
         del df
         aggregate.rename(columns={0: "counts"}, inplace=True)
         aggregate = aggregate.sort_values(by="counts", ascending=False)
-    aggregate["CDR3_length"] = aggregate["junction_aa"].str[1:-1].str.len() # Removing the flanking a.a. from length for true CDR3 count
-    return aggregate
 
+    # Define known J genes from dictionaries
+    known_j_genes = set().union(tcrcloud.colours.TRAJ, tcrcloud.colours.TRBJ, 
+                                tcrcloud.colours.TRGJ, tcrcloud.colours.TRDJ, 
+                                tcrcloud.colours.IGHJ, tcrcloud.colours.IGKJ, 
+                                tcrcloud.colours.IGLJ)
+    
+    # Assign "UNKNOWN_J" to any j_call not in the dictionary
+    aggregate["j_call"] = aggregate["j_call"].apply(lambda x: x if x in known_j_genes else "UNKNOWN_J")
+
+    # Compute CDR3 length (including flanking amino acids (to exclude add .str[1:-1] before .str.len())
+    aggregate["CDR3_length"] = aggregate["junction_aa"].str.len()
+    return aggregate
 
 def format_aminoacids(df):
     if "duplicate_count" in df.columns:
