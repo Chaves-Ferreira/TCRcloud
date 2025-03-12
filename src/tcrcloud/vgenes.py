@@ -475,7 +475,7 @@ def generate_vj_heatmap(args, formatted_samples):
             norm = mcolors.TwoSlopeNorm(vmin=data_min, vcenter=0, vmax=data_max)
 
             plt.imshow(diff1, aspect="auto", interpolation="nearest", cmap=cmap, norm=norm)
-            plt.colorbar(label="(Rep1 - Rep2) % Difference")
+            plt.colorbar(label="(Rep1 - Rep2) Absolute % Point Difference")
             plt.xlabel(f"{chain}-J Calls", fontsize=x_fontsize)
             plt.ylabel(f"{chain}-V Calls", fontsize=10)
             plt.title(f"VJ Pairing Heatmap Difference ({chain} Chain)\n{rep1} - {rep2}")
@@ -497,7 +497,7 @@ def generate_vj_heatmap(args, formatted_samples):
             norm = mcolors.TwoSlopeNorm(vmin=data_min, vcenter=0, vmax=data_max)
 
             plt.imshow(diff2, aspect="auto", interpolation="nearest", cmap=cmap, norm=norm)
-            plt.colorbar(label="(Rep2 - Rep1) % Difference")
+            plt.colorbar(label="(Rep2 - Rep1) Absolute % Point Difference")
             plt.xlabel(f"{chain}-J Calls")
             plt.ylabel(f"{chain}-V Calls")
             plt.title(f"VJ Pairing Heatmap Difference ({chain} Chain)\n{rep2} - {rep1}")
