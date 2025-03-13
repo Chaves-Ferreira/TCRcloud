@@ -45,7 +45,10 @@ def testserver(data):
         "https://agschwab.uni-muenster.de/airr/v1",
         "https://roche-airr.ireceptor.org/airr/v1",
         "https://t1d-1.ireceptor.org/airr/v1",
+        "https://t1d-2.ireceptor.org/airr/v1",
+        "https://t1d-3.ireceptor.org/airr/v1",
         "https://hpap.ireceptor.org/airr/v1/",
+        "https://greifflab-1.ireceptor.org/airr/v1",
     ]
 
     host_url = "https://vdjserver.org/airr/v1"
